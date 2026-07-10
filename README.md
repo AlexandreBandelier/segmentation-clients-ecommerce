@@ -29,7 +29,12 @@ Normalisation et typage, segmentation des clients, anonymisation (RGPD)
 
 ### 1. Normalisation et typage des données financières
 
-Pour permettre à Power BI de réaliser des opérations mathématiques (comme la somme du chiffre d'affaires), le script nettoie en les impuretés textuelles de WooCommerce :
+Pour permettre à Power BI de réaliser des opérations mathématiques (comme la somme du chiffre d'affaires), le script nettoie en les impuretés textuelles de WooCommerce.
+
+Pour que Power BI puisse faire des calculs, Python supprime le symbole €, les espaces normaux et les espaces insécables (\xa0), puis convertit le tout en nombres réels :
+- Il nettoie les colonnes Dépense totale et AOV.
+- Il remplace les virgules par des points.
+- Il remplace les valeurs vides par 0.0.
 
 ```python
 for col in ['Dépense totale', 'AOV']:
@@ -45,7 +50,11 @@ for col in ['Dépense totale', 'AOV']:
 
 ### 2. Algorithme de segmentation des clients
 
-Cette fonction évalue chaque client ligne par ligne pour déterminer son profil comportemental en donnant la priorité absolue à la récence d'inactivité pour écarter immédiatement les profils dormants de notre catégorie VIP actifs :
+Cette fonction évalue chaque client ligne par ligne pour déterminer son profil comportemental en donnant la priorité absolue à la récence d'inactivité pour écarter immédiatement les profils dormants de notre catégorie VIP actifs.
+
+La fonction analyse chaque ligne et applique les priorités suivantes :
+- Si la récence est supérieure à 180 jours : le client est classé en Ancien VIP Dormant (si plus de 5 commandes ou 300 € dépensés) ou en À relancer / Dormant.
+- Si la récence est inférieure à 180 jours : il vérifie s'il est VIP / Passionné, Nouveau client (1 seule commande et moins de 30 jours), ou Client régulier.
 
 ```python
 def attribuer_segment(row):
@@ -90,7 +99,8 @@ def masquer_texte_email(texte):
     return re.sub(pattern_email, remplacer, text_str if 'text_str' in locals() else texte_str)
 ```
 
-Application dynamique sur l'ensemble des colonnes textuelles (dans le cas où des emails seraient lisibles dans d'autres colonnes par erreur, comme c'était le cas)
+Application dynamique sur l'ensemble des colonnes textuelles. Pour éviter qu'une adresse e-mail se retrouve sur GitHub si un utilisateur l'a tapée par erreur dans un champ de texte (comme l'adresse de livraison), le script utilise une expression régulière. Dès qu'il détecte une structure d'e-mail, il remplace le milieu du texte par des étoiles (ex: c*****t@domaine.com).
+
 ```python
 for col in df_portfolio.columns:
     if df_portfolio[col].dtype == 'object':
@@ -127,3 +137,11 @@ En cliquant directement sur la tranche "Ancien VIP Dormant" du graphique en anne
 - Deux fichiers nettoyés et segmentés sont générés automatiquement :
     - donnees_boutique_propres_interne.csv : Données d'entreprise non altérées.
     - donnees_boutique_propres_portfolio.csv : Version anonymisée et conforme RGPD pour la publication publique.
+
+### Fonctionnement & Reproductibilité du Pipeline
+
+Note de sécurité importante (RGPD) : Conformément à notre politique de protection des données personnelles, le fichier de données brutes d'origine (donnees_boutique_brutes.csv) ainsi que le fichier de sortie de l'entreprise non anonymisé (donnees_boutique_propres_interne.csv) contiennent des informations personnelles identifiables (PII) réelles. Par conséquent, ils sont volontairement exclus de ce dépôt public (référencés dans le fichier .gitignore).
+
+Seul le fichier final anonymisé (donnees_boutique_propres_portfolio.csv) est partagé publiquement ici pour alimenter le rapport Power BI.
+
+Si vous souhaitez reproduire ce traitement avec votre propre fichier d'export WooCommerce, suivez la procédure ci-dessus.
