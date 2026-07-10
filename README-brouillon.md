@@ -1,12 +1,14 @@
-📊 Analyse de Segmentation Client RFM & Pipeline de Données E-Commerce
+Segmentation client RFM (pipeline réutilisable)
 
-📌 Présentation du Projet
+## Présentation
 
-Ce projet consiste en la mise en place d'un pipeline de données (ETL) automatisé pour analyser, segmenter et visualiser les performances de vente d'une boutique en ligne.
+Ce projet consiste en un pipeline de données (ETL) d'une boutique ecommerce à un tableau de bord visuel, permettant de classifier les clients suivant leur récence et la fréquence de leurs achats.
 
-L'objectif business est d'identifier les différents profils de consommateurs au sein de la base client, et plus particulièrement de cibler précisément les clients à forte valeur historique devenus inactifs (les "Anciens VIP Dormants") afin de permettre à l'équipe marketing de lancer des campagnes de réactivation à fort retour sur investissement (ROI).
+L'objectif business est d'identifier les différents profils de consommateurs au sein de la base client, et plus particulièrement d'identifier les anciens clients (dormants) puis de savoir s'ils sont d'anciens VIP ou non. Cela permet d'adapter les actions marketing leur étant destinées.
 
-🛠️ Architecture du Projet & Flux de Données
+Nous partons du principe que le but d'une entreprise est de maximiser ses résultats en minimisant les ressources employées. Or, les clients passés 
+
+## Flux de données
 
 Le flux de traitement des données est structuré de manière rigoureuse en 4 grandes étapes :
 
