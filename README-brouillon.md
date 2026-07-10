@@ -6,39 +6,30 @@ Ce projet consiste en un pipeline de données (ETL) d'une boutique ecommerce à 
 
 L'objectif business est d'identifier les différents profils de consommateurs au sein de la base client, et plus particulièrement d'identifier les anciens clients (dormants) puis de savoir s'ils sont d'anciens VIP ou non. Cela permet d'adapter les actions marketing leur étant destinées.
 
-Nous partons du principe que le but d'une entreprise est de maximiser ses résultats en minimisant les ressources employées. Or, les clients passés 
+Nous partons du principe que le but d'une entreprise est de maximiser ses résultats financiers tout en minimisant les ressources employées. Or, les clients passés représentent un gisement de valeur souvent sous-exploité. Il est établi qu'acquérir un nouveau client coûte jusqu'à 5 fois plus cher que de réactiver un client existant. En ciblant prioritairement les anciens VIP dormants (qui connaissent déjà la marque et ont un fort historique d'achat), l'équipe marketing concentre ses efforts et son budget là où le retour sur investissement (ROI) sera le plus rapide et le plus élevé.
 
 ## Flux de données
 
-Le flux de traitement des données est structuré de manière rigoureuse en 4 grandes étapes :
+Le flux de traitement des données est structuré en 4 grandes étapes :
 
-Extraction : Récupération des données brutes issues des ventes via un export WooCommerce (donnees_boutique_brutes.csv).
+1) Extraction : Récupération des données brutes issues des ventes via un export WooCommerce (donnees_boutique_brutes.csv).
+2) Transformation & Nettoyage (Python) :
+    - Normalisation et typage des données financières (suppression des symboles monétaires, des espaces de milliers classiques et des espaces insécables \xa0 qui bloquent le traitement numérique).
+    - Calcul des indicateurs comportementaux RFM (Récence, Fréquence, Montant) pour chaque client.
+    - Algorithme de segmentation attribuant un profil marketing précis.
+3) Anonymisation et conformité RGPD :
+    - Création d'une copie de données dédiée à la publication publique (donnees_boutique_propres_portfolio.csv).
+    - Remplacement des noms et identifiants par des clés uniques anonymisées (ex : Client_1, client_1).
+    - Masquage automatique des données sensibles (Regex) : Déploiement d'un filtre automatique analysant l'ensemble des colonnes textuelles afin de détecter et de masquer à la source toute adresse e-mail saisie accidentellement dans un mauvais champ par l'utilisateur.
+4) Visualisation (Power BI Web) : Connexion dynamique à la source de données hébergée sur GitHub pour générer un tableau de bord interactif d'aide à la décision.
 
-Transformation & Nettoyage (Python) :
+## Détails techniques du pipeline Python
 
-Normalisation et typage des données financières (suppression des symboles monétaires, des espaces de milliers classiques et des espaces insécables \xa0 qui bloquent le traitement numérique).
+Normalisation et typage, segmentation des clients, anonymisation (RGPD)
 
-Calcul des indicateurs comportementaux RFM (Récence, Fréquence, Montant) pour chaque client.
+### 1. Normalisation et typage des données financières
 
-Algorithme de segmentation attribuant un profil marketing précis.
-
-Anonymisation et conformité RGPD :
-
-Création d'une copie de données dédiée à la publication publique (donnees_boutique_propres_portfolio.csv).
-
-Remplacement des noms et identifiants par des clés uniques anonymisées (ex : Client_1, client_1).
-
-Masquage automatique des données sensibles (Regex) : Déploiement d'un filtre automatique analysant l'ensemble des colonnes textuelles afin de détecter et de masquer à la source toute adresse e-mail saisie accidentellement dans un mauvais champ par l'utilisateur.
-
-Visualisation (Power BI Web) : Connexion dynamique à la source de données hébergée sur GitHub pour générer un tableau de bord interactif d'aide à la décision.
-
-💻 Détails techniques du pipeline (Python)
-
-Le script de nettoyage pipeline.py automatise l'ensemble des règles de gestion complexes. Voici les deux briques technologiques majeures :
-
-1. Normalisation et typage des données financières
-
-Pour permettre à Power BI de réaliser des opérations mathématiques (comme la Somme du chiffre d'affaires), le script nettoie en profondeur les impuretés textuelles de WooCommerce :
+Pour permettre à Power BI de réaliser des opérations mathématiques (comme la somme du chiffre d'affaires), le script nettoie en les impuretés textuelles de WooCommerce :
 
 ```python
 for col in ['Dépense totale', 'AOV']:
@@ -52,7 +43,32 @@ for col in ['Dépense totale', 'AOV']:
         df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
 ```
 
-2. Algorithme de détection et d'anonymisation des adresses e-mail
+### 2. Algorithme de segmentation des clients
+
+Cette fonction évalue chaque client ligne par ligne pour déterminer son profil comportemental en donnant la priorité absolue à la récence d'inactivité pour écarter immédiatement les profils dormants de notre catégorie VIP actifs :
+
+```python
+def attribuer_segment(row):
+    commandes = row.get('Commandes', 0)
+    depense = row.get('Dépense totale', 0)
+    recence = row.get('Recence_Jours', 999)
+    
+    # 1. Traitement de la récence (plus de 6 mois d'inactivité)
+    if recence > 180:
+        if commandes >= 5 and depense >= 300:
+            return 'Ancien VIP Dormant'
+        return 'À relancer / Dormant'
+    
+    # 2. Traitement des profils actifs
+    elif commandes >= 5 and depense >= 300:
+        return 'VIP / Passionné'
+    elif commandes == 1 and recence <= 30:
+        return 'Nouveau client'
+    else:
+        return 'Client régulier'
+```
+
+### 3. Algorithme de détection et d'anonymisation des adresses e-mail
 
 Afin de garantir le respect du RGPD sans altérer la structure du fichier, un scanner basé sur une expression régulière analyse dynamiquement toutes les cellules de texte de la table :
 
@@ -74,55 +90,40 @@ def masquer_texte_email(texte):
     return re.sub(pattern_email, remplacer, text_str if 'text_str' in locals() else texte_str)
 ```
 
-# Application dynamique sur l'ensemble des colonnes textuelles
+Application dynamique sur l'ensemble des colonnes textuelles (dans le cas où des emails seraient lisibles dans d'autres colonnes par erreur, comme c'était le cas)
 ```python
 for col in df_portfolio.columns:
     if df_portfolio[col].dtype == 'object':
         df_portfolio[col] = df_portfolio[col].apply(masquer_texte_email)
 ```
 
-📊 Tableau de Bord Power BI (Aide à la Décision)
+## Tableau de bord Power BI (aide à la décision)
 
-Le rapport construit est entièrement interactif et s'articule autour de trois composants principaux :
+Le rapport construit est interactif et s'articule autour de trois composants principaux :
 
-Les KPIs Financiers & Volumétriques : Chiffre d'Affaires Global (Somme formatée en €), Nombre de Clients Uniques (Nombre distinct d'identifiants), et Panier Moyen historique (AOV).
+1) Les KPIs Financiers & Volumétriques : Chiffre d'affaires global, Nombre de clients, et Panier moyen historique.
+2) Structure de la base clients (Graphique en Anneau) : Visualisation de la proportion de chaque segment (VIP, Nouveau, Client Régulier, À relancer, Ancien VIP Dormant).
+3) Le tableau opérationnel (les données brutes) : Liste filtrable des fiches clients anonymes contenant leur historique d'achat et leur récence d'inactivité.
 
-La Structure de la Base Client (Graphique en Anneau) : Visualisation de la proportion de chaque segment (VIP, Nouveau, Client Régulier, À relancer, Ancien VIP Dormant).
+### Exemple d'utilisation :
 
-Le Tableau Opérationnel (Table dynamique) : Liste filtrable des fiches clients anonymes contenant leur historique d'achat et leur récence d'inactivité.
+En cliquant directement sur la tranche "Ancien VIP Dormant" du graphique en anneau, l'ensemble du tableau de bord se filtre instantanément. L'analyste ou le responsable marketing obtient :
 
-💡 Scénario d'exploitation décisionnelle
+- Le volume exact de clients concernés par cette cible.
+- Le manque à gagner financier précis représenté par ce segment dormant.
+- La liste des identifiants anonymes directement prête à être exportée pour lancer une campagne de réactivation ciblée.
 
-En cliquant directement sur la tranche "Ancien VIP Dormant" du graphique en anneau, l'ensemble du tableau de bord se filtre instantanément. L'analyste ou le responsable marketing obtient immédiatement :
+## Comment exécuter ce projet de votre côté :
 
-Le volume exact de clients concernés par cette cible.
+###### Prérequis
 
-Le manque à gagner financier précis représenté par ce segment dormant.
+- Python 3.x installé sur votre machine.
+- La bibliothèque Pandas : pip install pandas numpy
 
-La liste des identifiants anonymes directement prête à être exportée pour lancer une campagne de réactivation ciblée.
+##### Exécution du pipeline
 
-🚀 Comment exécuter ce projet ?
-
-Prérequis
-
-Python 3.x installé sur votre machine.
-
-La bibliothèque Pandas :
-
-pip install pandas numpy
-
-
-Exécution du pipeline
-
-Placez votre fichier d'export WooCommerce dans le même dossier sous le nom donnees_boutique_brutes.csv.
-
-Lancez le script de pipeline :
-
-python pipeline.py
-
-
-Deux fichiers nettoyés et segmentés sont générés automatiquement :
-
-donnees_boutique_propres_interne.csv : Données d'entreprise non altérées.
-
-donnees_boutique_propres_portfolio.csv : Version anonymisée et conforme RGPD pour la publication publique.
+- Placez votre fichier d'export WooCommerce dans le même dossier sous le nom donnees_boutique_brutes.csv.
+- Lancez le script de pipeline : python pipeline.py
+- Deux fichiers nettoyés et segmentés sont générés automatiquement :
+    - donnees_boutique_propres_interne.csv : Données d'entreprise non altérées.
+    - donnees_boutique_propres_portfolio.csv : Version anonymisée et conforme RGPD pour la publication publique.
